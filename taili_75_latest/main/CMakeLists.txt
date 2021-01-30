@@ -1,0 +1,11 @@
+idf_component_register(SRCS "gatts_server.c"
+                            "main.c"
+                            "time.c"
+                            "wifi.c"
+                            "spiffs.c"
+                            "http_client.c"
+                            "screen_75_driver.c"
+                            "calendar.c"
+                    INCLUDE_DIRS "."
+                    INCLUDE_DIRS "include"
+                    )
