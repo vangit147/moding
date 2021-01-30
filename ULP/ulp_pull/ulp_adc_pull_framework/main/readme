@@ -1,0 +1,83 @@
+compareaccx:
+	move r0,ac
+	move r2,acl
+	psr 
+    jump account
+    move r1,cur_ax
+	st r0,r1,0
+	move r2,prev_ax
+	psr 
+	jump  compare
+
+
+    compare:
+   ld r2,r2,0
+   sub r0,r0,r2
+   psr
+   jump abs
+ //  sub r0,r1,r2
+   ret
+
+   account:
+   ld r0,r0,0
+   lsh r0,r0,8
+   ld r2,r2,0
+   or r0,r0,r2
+ //  sub r0,r1,r2
+   ret
+
+   	ADD r3,r3,3 // remove 3 arguments from stack
+	MOVE r1, MPU_ADDR
+	push r1
+	move r1, MPU_USER_CTRL_REG  
+	push r1
+	move r1, 0x00
+	push r1
+    psr
+	JUMP write8
+
+
+    move r2,2000
+	psr
+	jump waitMs
+	WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + 12, 1, 0)
+    //jump exit
+	jump wake_up 
+ *  //WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + 12, 1, 0)
+  //  WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + 12, 1, 1)
+  ;    jumpr popfail,1,ge
+    ;    WRITE_RTC_REG(RTC_GPIO_OUT_REG, RTC_GPIO_OUT_DATA_S + 12, 1, 1)
+    ;    ld r2,r3,12 // Register
+	;     move r0,ay
+	;    st r2,r0,0
+    ;    psr
+    ;    jump i2c_write_byte
+    ;    jumpr popfail,1,ge
+    .global count
+count:
+ move r0,ac
+ move r1,acl
+ add
+ move r1,prev_x
+ st r0,r1,0
+ ret
+    ;    psr
+    ;    jump i2c_start_cond
+
+    ;    ld r2,r3,16
+    ;    lsh r2,r2,1
+    ;    or r2,r2,1 // Address Read
+	;    move r0,az
+	;    st r2,r0,0
+    ;    psr
+    ;    jump i2c_write_byte
+    ;    jumpr popfail,1,ge
+    MOVE r1, MPU_ADDR
+	push r1
+	move r1, MPU_ACCEL_CFG_REG 
+	push r1
+	move r1, 0x00
+	push r1
+    psr
+	JUMP write8
+    ADD r3,r3,3 
