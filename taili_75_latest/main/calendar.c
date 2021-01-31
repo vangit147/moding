@@ -196,6 +196,7 @@ void set_time_to_wakeup_by_timer(int hour,int min)
 {
 	gettimeofday(&stime,NULL);
 	current_data.time_stamp=stime.tv_sec;
+	gettimeofday(&stime,NULL);
 	time_now=stime.tv_sec;
 	p=localtime(&time_now);
 	printf("p->tm_hour=%d p->tm_min=%d p->tm_sec=%d ",p->tm_hour,p->tm_min,p->tm_sec);

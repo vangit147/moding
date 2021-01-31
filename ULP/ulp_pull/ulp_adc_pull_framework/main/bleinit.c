@@ -27,11 +27,22 @@
 #include "esp_err.h"
 #include "esp_spi_flash.h"
 
+extern int DOWNLOAD_BIT;
+extern int CLICK_BIT;
+extern unsigned char isconnected; //wifi连接标志位
+char url_state=0;
+char pic_display_state=0;
+char download_url[200]={0},file_name[20]={0};
+char download_url_cache[200]={0};
+char wifi_ssid_first[32];
+char wifi_pssd_first[64];
+unsigned char device_info[26] = {0x00, 0x34, 0x01, 0x01, 0x11, 0x22, 0x0A, 0x01, 0x00,0x00,0x00,0x00,0x00,0x00};
+
 uint16_t data_conn_id = 0xffff;
 esp_gatt_if_t data_gatts_if = 0xff;
 int write_id = 0;
-extern int BLECON_BIT;
-extern int BLEDIS_BIT;
+int BLECON_BIT;
+int BLEDIS_BIT;
 extern EventGroupHandle_t EventGroupHandler;
 static const char *GATTS_TAG = "GATT_server";
 struct gatts_profile_inst
@@ -52,20 +63,15 @@ struct gatts_profile_inst
 
 //profile 处理事件
 static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
-
 #define GATTS_SERVICE_UUID_TEST_A 0x00FF
 #define GATTS_CHAR_UUID_TEST_A 0xFF01
 #define GATTS_DESCR_UUID_TEST_A 0x3333
 #define GATTS_NUM_HANDLE_TEST_A 4
-
 //定义设备名称
 #define TEST_DEVICE_NAME "Moding"
 #define TEST_MANUFACTURER_DATA_LEN 17
-
 #define GATTS_DEMO_CHAR_VAL_LEN_MAX 0x40
-
 #define PREPARE_BUF_MAX_SIZE 1024
-
 // 特征初始值  特征初始值必须是非空对象，特征长度必须始终大于零，否则堆栈将返回错误
 static uint8_t char1_str[] = {0x11, 0x22, 0x33};
 static esp_gatt_char_prop_t a_property = 0;
@@ -76,7 +82,6 @@ static esp_attr_value_t gatts_demo_char1_val =
         .attr_len = sizeof(char1_str),
         .attr_value = char1_str,
 };
-
 static uint8_t adv_config_done = 0;
 #define adv_config_flag (1 << 0)
 #define scan_rsp_config_flag (1 << 1)
@@ -132,18 +137,18 @@ static uint8_t adv_service_uuid128[32] = {
 //static uint8_t test_manufacturer[TEST_MANUFACTURER_DATA_LEN] =  {0x12, 0x23, 0x45, 0x56};
 //adv data
 esp_ble_adv_data_t adv_data = {
-    .set_scan_rsp = false,    //将adv_data设置为扫描响应
-    .include_name = true,     //adv_data 是否包含设备名称
-    .include_txpower = false, //是否包含发送功率
-    .min_interval = 1000,     //连接最小时间间隔 Time = min_interval * 1.25 msec
-    .max_interval = 1200,     //连接最大事件间隔, Time = max_interval * 1.25 msec
+	.set_scan_rsp = false,    //将adv_data设置为扫描响应
+	.include_name = true,     //adv_data 是否包含设备名称
+	.include_txpower = false, //是否包含发送功率
+	.min_interval = 0x0006,   //连接最小时间间隔 Time = min_interval * 1.25 msec
+	.max_interval = 0x0010,   //连接最大事件间隔, Time = max_interval * 1.25 msec
     .appearance = 0x00,
-    .manufacturer_len = 14,                                               //制造商数据长度
-    .p_manufacturer_data = 0,                                             //制造商数据点
-    .service_data_len = 0,                                                //服务数据长度
-    .p_service_data = NULL,                                               //服务数据
-    .service_uuid_len = sizeof(adv_service_uuid128),                      //服务UUID长度
-    .p_service_uuid = adv_service_uuid128,                                //服务的UUID
+    .manufacturer_len = 26,    //制造商数据长度
+    .p_manufacturer_data = device_info,  //制造商数据点
+    .service_data_len = 0,               //服务数据长度
+    .p_service_data = NULL,              //服务数据
+    .service_uuid_len = sizeof(adv_service_uuid128),                        //服务UUID长度
+    .p_service_uuid = adv_service_uuid128,                                 //服务的UUID
     .flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT), //发现模式的标记
 };
 // 扫描恢复数据
@@ -324,6 +329,87 @@ void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble
     if (param->exec_write.exec_write_flag == ESP_GATT_PREP_WRITE_EXEC)
     {
         esp_log_buffer_hex(GATTS_TAG, prepare_write_env->prepare_buf, prepare_write_env->prepare_len);
+        if (prepare_write_env->prepare_buf[0] == 0x55 && prepare_write_env->prepare_buf[1] == 0xfa && prepare_write_env->prepare_buf[prepare_write_env->prepare_len - 1] == 0x55 && prepare_write_env->prepare_buf[prepare_write_env->prepare_len - 2] == 0xfa)
+	    {
+        	if (prepare_write_env->prepare_buf[3] == 0x01)
+        	{
+        		ESP_LOGI(GATTS_TAG, "connect wifi");
+        		wifi_config_t wifi_config;
+				bzero(&wifi_config, sizeof(wifi_config_t));
+				int j = 4 + prepare_write_env->prepare_buf[4] + 1;
+				memset(wifi_ssid_first,0,sizeof(wifi_ssid_first));
+				memset(wifi_pssd_first,0,sizeof(wifi_pssd_first));
+				memcpy(wifi_ssid_first, prepare_write_env->prepare_buf + 5, prepare_write_env->prepare_buf[4]);
+				memcpy(wifi_pssd_first, prepare_write_env->prepare_buf + 5 + prepare_write_env->prepare_buf[4] + 1, prepare_write_env->prepare_buf[j]);
+				ESP_LOGW(GATTS_TAG,"wifi_ssid_first_receive:%s", wifi_ssid_first);
+				ESP_LOGW(GATTS_TAG,"wifi_pssd_first_receive:%s", wifi_pssd_first);
+				if(strcmp((char *)wifi_config.sta.ssid,wifi_ssid_first)&&strcmp((char *)wifi_config.sta.password,wifi_pssd_first)&&isconnected==0)
+				{
+					strcpy((char *)wifi_config.sta.ssid,wifi_ssid_first);
+					strcpy((char *)wifi_config.sta.password,wifi_pssd_first);
+					ESP_LOGW(GATTS_TAG,"wifi_config.sta.ssid:%s", wifi_config.sta.ssid);
+					ESP_LOGW(GATTS_TAG,"wifi_config.sta.password:%s", wifi_config.sta.password);
+					ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+					esp_wifi_disconnect();
+					esp_wifi_connect();
+				}
+				if(isconnected==1)
+				{
+					getdeviceinfo();
+					ble_senddata(prepare_write_env->prepare_buf);
+					esp_ble_gap_config_adv_data(&adv_data);
+				}
+        	}
+        	else if(prepare_write_env->prepare_buf[3] == 0x02)
+        	{
+        		ESP_LOGI(GATTS_TAG, "httpdownload");
+        		int download_len = prepare_write_env->prepare_buf[5];
+			    int file_name_len = prepare_write_env->prepare_buf[6];
+			    ESP_LOGI(GATTS_TAG, "download_len= %d", download_len);
+			    ESP_LOGI(GATTS_TAG, "file_name_len= %d", file_name_len);
+			    memset(download_url_cache, 0, 200);
+			    memcpy(download_url_cache, prepare_write_env->prepare_buf + 6, download_len);
+				ESP_LOGI(GATTS_TAG, "download_url_cache= %s", download_url_cache);
+				ESP_LOGI(GATTS_TAG, "download_url= %s", download_url);
+				if((strcmp(download_url,download_url_cache) && url_state<2) && download_len>0)
+				{
+					memset(download_url, 0, 200);
+					memcpy(download_url, prepare_write_env->prepare_buf + 6, download_len);
+					download_url[download_len] = 0;
+					memset(file_name, 0, 20);
+					memcpy(file_name, (char *)(prepare_write_env->prepare_buf + 6 + download_len + 1), prepare_write_env->prepare_buf[6 + download_len]);
+					ESP_LOGI(GATTS_TAG, "file_name= %s", file_name);
+					if (isconnected == 1)
+					{
+						ESP_LOGI(GATTS_TAG, "setbits");
+						xEventGroupSetBits(EventGroupHandler, DOWNLOAD_BIT);
+					}
+					else
+					{
+						ESP_LOGI(GATTS_TAG, "wifi not connect");
+						xEventGroupClearBits(EventGroupHandler, DOWNLOAD_BIT);
+					}
+				}
+				else
+				{
+					getdeviceinfo();
+					esp_ble_gap_config_adv_data(&adv_data);//图片完成后广播
+				}
+				ble_senddata(prepare_write_env->prepare_buf);
+        	}
+        	else if(prepare_write_env->prepare_buf[3] == 0x07)
+        	{
+        		if(pic_display_state<2)
+        		{
+        			memset(file_name, 0, 20);
+					int pic_name_length=prepare_write_env->prepare_buf[4];
+					memcpy(file_name, prepare_write_env->prepare_buf + 5, pic_name_length);
+					ESP_LOGI(GATTS_TAG, "the picture what you click is %s",file_name);
+					ble_senddata(prepare_write_env->prepare_buf);
+					xEventGroupSetBits(EventGroupHandler, CLICK_BIT);
+        		}
+        	}
+	    }
     }
     else
     {
@@ -348,7 +434,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
         gl_profile_tab[PROFILE_A_APP_ID].service_id.id.uuid.len = ESP_UUID_LEN_16;
         gl_profile_tab[PROFILE_A_APP_ID].service_id.id.uuid.uuid.uuid16 = GATTS_SERVICE_UUID_TEST_A;
 
-        esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME); //设置设备名称
+        esp_err_t set_dev_name_ret = esp_ble_gap_set_device_name(TEST_DEVICE_NAME); //璁剧疆璁惧鍚嶇О
         if (set_dev_name_ret)
         {
             ESP_LOGE(GATTS_TAG, "set device name failed, error code = %x", set_dev_name_ret);
@@ -367,14 +453,14 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
         }
         adv_config_done |= scan_rsp_config_flag;
 #else
-        //配置广播数据
+        //閰嶇疆骞挎挱鏁版嵁
         esp_err_t ret = esp_ble_gap_config_adv_data(&adv_data);
         if (ret)
         {
             ESP_LOGE(GATTS_TAG, "config adv data failed, error code = %x", ret);
         }
         adv_config_done |= adv_config_flag;
-        //配置扫描响应数据
+        //閰嶇疆鎵弿鍝嶅簲鏁版嵁
         ret = esp_ble_gap_config_adv_data(&scan_rsp_data);
         if (ret)
         {
@@ -411,7 +497,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
 
             ESP_LOGI(GATTS_TAG, "GATT_WRITE_EVT, value len %d, value :", param->write.len);
             //esp_log_buffer_hex("receive data.....", param->write.value, param->write.len);
-            //将接收到的数据发送出去
+            //灏嗘帴鏀跺埌鐨勬暟鎹彂閫佸嚭鍘�
             //rec_data = param->write.len;
             if (param->write.len == 2 && (param->write.value[0] == 0x01) && param->write.value[2] == 0x00)
             {
@@ -474,7 +560,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
 
         esp_ble_gatts_start_service(gl_profile_tab[PROFILE_A_APP_ID].service_handle);
         a_property = ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_NOTIFY;
-        //特征值属性，可读可写可通知
+        //鐗瑰緛鍊煎睘鎬э紝鍙鍙啓鍙�氱煡
         esp_err_t add_char_ret = esp_ble_gatts_add_char(gl_profile_tab[PROFILE_A_APP_ID].service_handle, &gl_profile_tab[PROFILE_A_APP_ID].char_uuid,
                                                         ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
                                                         a_property,
@@ -614,22 +700,22 @@ void GattServers_Init(void)
     esp_err_t ret;
 
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
-    //创建一个esp_bt_controller_config_t由BT_CONTROLLER_INIT_CONFIG_DEFAULT()
-    //宏生成的默认设置命名的BT控制器配置结构来初始化BT控制器
+    //鍒涘缓涓�涓猠sp_bt_controller_config_t鐢盉T_CONTROLLER_INIT_CONFIG_DEFAULT()
+    //瀹忕敓鎴愮殑榛樿璁剧疆鍛藉悕鐨凚T鎺у埗鍣ㄩ厤缃粨鏋勬潵鍒濆鍖朆T鎺у埗鍣�
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
-    //初始化蓝牙控制器
+    //鍒濆鍖栬摑鐗欐帶鍒跺櫒
     ret = esp_bt_controller_init(&bt_cfg);
     if (ret)
     {
         ESP_LOGE("GATT_Server", "%s initialize controller failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
-    /*使能蓝牙控制器：并工作在BLE模式
-    支持四种蓝牙模式：
-    ESP_BT_MODE_IDLE：蓝牙空闲模式
-    ESP_BT_MODE_BLE：BLE模式
-    ESP_BT_MODE_CLASSIC_BT：BT经典模式
-    ESP_BT_MODE_BTDM：双模式（BLE + BT Classic）
+    /*浣胯兘钃濈墮鎺у埗鍣細骞跺伐浣滃湪BLE妯″紡
+    鏀寔鍥涚钃濈墮妯″紡锛�
+    ESP_BT_MODE_IDLE锛氳摑鐗欑┖闂叉ā寮�
+    ESP_BT_MODE_BLE锛欱LE妯″紡
+    ESP_BT_MODE_CLASSIC_BT锛欱T缁忓吀妯″紡
+    ESP_BT_MODE_BTDM锛氬弻妯″紡锛圔LE + BT Classic锛�
    */
     ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret)
@@ -637,36 +723,36 @@ void GattServers_Init(void)
         ESP_LOGE(GATTS_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
-    //初始化蓝牙堆栈
+    //鍒濆鍖栬摑鐗欏爢鏍�
     ret = esp_bluedroid_init();
     if (ret)
     {
         ESP_LOGE(GATTS_TAG, "%s init bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
-    //启用堆栈
+    //鍚敤鍫嗘爤
     ret = esp_bluedroid_enable();
     if (ret)
     {
         ESP_LOGE(GATTS_TAG, "%s enable bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
-    //注册GATTS事件处理程序
+    //娉ㄥ唽GATTS浜嬩欢澶勭悊绋嬪簭
     ret = esp_ble_gatts_register_callback(gatts_event_handler);
     if (ret)
     {
         ESP_LOGE(GATTS_TAG, "gatts register error, error code = %x", ret);
         return;
     }
-    //注册GAT事件处理程序
+    //娉ㄥ唽GAT浜嬩欢澶勭悊绋嬪簭
     ret = esp_ble_gap_register_callback(gap_event_handler);
     if (ret)
     {
         ESP_LOGE(GATTS_TAG, "gap register error, error code = %x", ret);
         return;
     }
-    //使用应用程序ID注册应用程序配置文件应用程序ID是用户分配的编号，用于标识每个配置文件。
-    //这样，多个应用程序配置文件可以在一台服务器上运行。
+    //浣跨敤搴旂敤绋嬪簭ID娉ㄥ唽搴旂敤绋嬪簭閰嶇疆鏂囦欢搴旂敤绋嬪簭ID鏄敤鎴峰垎閰嶇殑缂栧彿锛岀敤浜庢爣璇嗘瘡涓厤缃枃浠躲��
+    //杩欐牱锛屽涓簲鐢ㄧ▼搴忛厤缃枃浠跺彲浠ュ湪涓�鍙版湇鍔″櫒涓婅繍琛屻��
     ret = esp_ble_gatts_app_register(PROFILE_A_APP_ID);
     if (ret)
     {

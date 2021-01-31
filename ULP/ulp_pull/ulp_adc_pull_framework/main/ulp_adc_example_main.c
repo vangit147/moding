@@ -3,7 +3,7 @@
    变量说明 :
    阈值需要在初始化ULP的时候赋值
    p_ax    x正轴阈值
-   m_ax    x负轴阈值 
+   m_ax    x负轴阈值
    sysrun_times:ulp运行的次数
    moving_times：运动的次数
    move_flags：当前是否运动的标志位
@@ -43,7 +43,7 @@ typedef enum
 {
     Run_Mode = 0,
     Demo_Mode
-};
+}MODE;
 typedef enum
 {
     Hibernation = 1,
@@ -55,10 +55,11 @@ typedef struct Mode_t
 {
 	pull_mode mode;
     unsigned char status;
-};
+}Mode_t;
 RTC_DATA_ATTR struct Mode_t t_mode; //将结构体放入RTC内存中
 struct tm timeinfo;                 //时间变量结构体
 time_t now;
+char strftime_buf[64];
 
 //添加宏 RTCRTC_DATA_ATTR
 //将变量定义在(RTC)内存
@@ -73,9 +74,11 @@ int UPDATE_BIT = BIT2;
 int RESPONSE_BIT = BIT3;
 int TIMER_BIT = BIT4;
 int STARTSCREEN = BIT5;
+int DOWNLOAD_BIT = BIT6;
+int CLICK_BIT = BIT7;
 //任务相关定义
 
-#define the_time_periods_of_the_day 48
+#define number_of_time_periods_in_a_day 48
 #define EVENTGROUP_TASK_PRIO 10           //任务优先级
 #define EVENTGROUP_STK_SIZE 4096 * 2      //任务堆栈大小
 TaskHandle_t EventGroupTask_Handler;      //任务句柄
@@ -98,11 +101,27 @@ static void write_modetoflash(void);
 short aacx, aacy, aacz; //加速度传感器原始数据
 float AccX, AccY, AccZ;
 
+
+extern void Acep_loadPIC1_init();
+extern void Acep_loadPIC2_init();
+extern void Acep_loadPIC1_end();
+extern void Acep_loadPIC2_end();
+extern void Acep_loadPIC1_test(unsigned char* pic_data3,int max_data);
+extern void Acep_loadPIC2_test(unsigned char* pic_data4,int max_data);
 void start_ulp();
 void hibernation();
 void display_picture();
+void display(unsigned char pic_index,unsigned char pic_display_screen);
 void update();
+int string_to_int(char * string,int index);
+void int_to_string(long value, char * output);
+void sleep_time(unsigned char mode);
+#define sector_size 4096
+unsigned char pic_number;
 unsigned char value;
+unsigned char pull_ring[4096];
+extern char url_state;
+extern char pic_display_state;
 void app_main()
 {
     esp_err_t ret;
@@ -116,7 +135,6 @@ void app_main()
 
     //开机时判断当前的运行模式为演示模式还是运行模式,当深度唤醒时,初始化的函数不会再次执行,会进入
     //esp_wake_deep_sleep执行代码
-    setenv("TZ", "CST-8", 1);
     getcurrenttime();
 
     printf("hours=%d ,minute=%d ,second=%d \n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
@@ -151,6 +169,8 @@ void app_main()
     			{
     				printf("wakeup by timer in Hibernation mode,just start ULP and deep sleep, will be in Display mode in 5 seconds\n");
 					start_ulp();
+					value=4;
+					sleep_time(2);
 					esp_deep_sleep_start();
     			}
     		}
@@ -161,17 +181,17 @@ void app_main()
     				printf("wakeup by timer in Display mode\n");
     			}
     		}
-    		else if(t_mode.status==Response)
+    		else if(t_mode.status==Update)
     		{
-    			if(value==5)
+    			printf("wakeup by timer in Update mode\n");
+    		}
+    		else if(t_mode.status==Response)
+			{
+				if(value==5)
 				{
 					printf("wakeup by timer in Response mode\n");
 				}
-    		}
-    		if(value==4)
-    		{
-    			printf("wakeup by timer from Display mode,now,it will be in Update mode\n");
-    		}
+			}
 			break;
     	case ESP_SLEEP_WAKEUP_ULP:
 			printf( "ULP wakeup\n");
@@ -234,38 +254,161 @@ void start_ulp()
 	start_ulp_program();                            //启动ulp
 	ESP_ERROR_CHECK(esp_sleep_enable_ulp_wakeup()); //设置允许ulp唤醒CPU
 }
-void hibernation()
+void sleep_time(unsigned char mode)
 {
-	unsigned char i,j=0;
 	uint64_t sleep_time;
+	unsigned char number_of_time_periods=0;
+	unsigned char i;
 	getcurrenttime();
 	i = timeinfo.tm_hour;
 	if(timeinfo.tm_min > 30)
 	{
 		i = timeinfo.tm_hour + 1;
 	}
-	for(;i<the_time_periods_of_the_day;i++)
+	for(;i<number_of_time_periods_in_a_day;i++)
 	{
-		if(mode_union[i]==1)
+		if(mode_union[i]==mode)
 		{
-			j++;
+			number_of_time_periods++;
 		}
 		else
 		{
 			break;
 		}
 	}
-	unsigned char temp = 60/(the_time_periods_of_the_day/24);
-	sleep_time = j*temp*60-55;
-	value=2;
+	unsigned char temp = 60/(number_of_time_periods_in_a_day/24);
+	//wakeup five seconds before entering next mode
+	if(mode==1)
+	{
+		sleep_time = number_of_time_periods*temp*60-55;
+	}
+	else
+	{
+		sleep_time = number_of_time_periods*temp*60;
+	}
 	esp_sleep_enable_timer_wakeup(sleep_time);
+}
+void hibernation()
+{
+	value=2;
+	sleep_time(1);
 }
 
 void display_picture()
 {
 	printf("start loop display picture\n");
 	vTaskDelay(2000 / portTICK_RATE_MS);
+	unsigned char time_temp[10];
+	memset(time_temp,0,sizeof(time_temp));
+	//set value for time_temp
+	spi_flash_read(info_page*sector_size, &pic_number, sizeof(unsigned char));
+	if(pic_number == 0xff)
+	{
+		pic_number = 0;
+	}
+	else
+	{
+		unsigned char i = 0;
+		for (i = 1; i <= pic_number;i++)
+		{
+			memset(&pic_data,0,sizeof(pic_data));
+			spi_flash_read(info_page*4096+i*sizeof(pic_data),&pic_data,sizeof(pic_data));
+			if(pic_data.pic_is_delete==0)
+			{
+				if(strcmp((char*)pic_data.pic_time,(char*)time_temp)==0)
+				{
+					int start_time = string_to_int((char*)pic_data.pic_display_start_end_time,2);
+					int end_time = string_to_int((char*)&pic_data.pic_display_start_end_time[2],2);
+					getcurrenttime();
+					if(timeinfo.tm_hour >= start_time && timeinfo.tm_hour <= end_time)
+					{
+						if(pic_data.pic_display_order[1]==0)
+						{
+							display(pic_data.pic_index,pic_data.pic_display_screen);
+							pic_data.pic_display_order[1]=1;
+							//problem
+							spi_flash_erase_sector(info_page);
+							sf_WriteBuffer(&pic_number, info_page * 4096, sizeof(unsigned char));
+							spi_flash_write(info_page*sector_size,&pic_data,sizeof(pic_data));
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
 	printf("loop display picture end\n");
+}
+
+void display(unsigned char pic_index,unsigned char pic_display_screen)
+{
+	int num_times=0;
+	int num=134400/4096+1;
+	int pic_size_remainder=134400%4096;
+	printf("the pic will display on screen %c !\n",pic_display_screen);
+	printf("the pic loaction is %d in flash !\n",pic_index);
+	switch(pic_display_screen)
+	{
+		case '1':
+			Acep_loadPIC1_init();
+			for(int i=num;i>1;i--)
+			{
+				spi_flash_read((picture_data + picture_cap *pic_index ) * 4096 + num_times * 4096,pull_ring,4096);
+				Acep_loadPIC1_test(pull_ring,4096);
+				num_times++;
+			}
+			spi_flash_read((picture_data + picture_cap * pic_index) * 4096 + num_times * 4096,pull_ring,pic_size_remainder);
+			Acep_loadPIC1_test(pull_ring,pic_size_remainder);
+			Acep_loadPIC1_end();
+			printf("the pic display_finished in screen 1 !\n");
+			break;
+		case '2':
+			Acep_loadPIC2_init();
+			for(int i=num;i>1;i--)
+			{
+				spi_flash_read((picture_data + picture_cap * pic_index) * 4096 + num_times * 4096,pull_ring,4096);
+				Acep_loadPIC2_test(pull_ring,4096);
+				num_times++;
+			}
+			spi_flash_read((picture_data + picture_cap * pic_index) * 4096 + num_times * 4096,pull_ring,pic_size_remainder);
+			Acep_loadPIC2_test(pull_ring,pic_size_remainder);
+			Acep_loadPIC2_end();
+			printf("the pic display_finished in screen 2 !");
+			break;
+	}
+}
+int string_to_int(char * string,int index)
+{
+    int value = 0;
+    for(int i = 0;string[index] >= '0' && string[index] <= '9' && i<index; i++)
+    {
+        value = value * 10 + string[i] - '0';
+    }
+    return value;
+}
+void int_to_string(long value, char * output)
+{
+    int index = 0;
+    char temp;
+    if(value == 0)
+    {
+    	output[0] = value + '0';
+    }
+    else
+    {
+        while(value)
+        {
+        	output[index] = value % 10 + '0';
+            index ++;
+            value /= 10;
+        }
+    }
+    for(unsigned char i=0;i<index/2;i++)
+    {
+    	temp=output[i];
+    	output[i]=output[index-i-1];
+    	output[index-i-1]=temp;
+    }
 }
 
 void update()
@@ -311,7 +454,7 @@ void eventgroup_task(void *pvParameters)
         {
             //等待事件组中的相应事件位
             EventValue = xEventGroupWaitBits((EventGroupHandle_t)EventGroupHandler,
-                                             (EventBits_t)HIBER_BIT | DISPLAY_BIT | UPDATE_BIT | RESPONSE_BIT,
+                                             (EventBits_t)HIBER_BIT | DISPLAY_BIT | UPDATE_BIT | RESPONSE_BIT | DOWNLOAD_BIT | CLICK_BIT,
                                              (BaseType_t)pdTRUE,
                                              (BaseType_t)pdFALSE,
                                              (TickType_t)portMAX_DELAY);
@@ -345,28 +488,27 @@ void eventgroup_task(void *pvParameters)
 				}
 				else
 				{
-					if (ulp_move_flags == 0) //ulp状态 未动
+					display_picture();
+					getcurrenttime();
+					if(timeinfo.tm_hour==23)
 					{
-						printf("from display mode enter deepsleep\r\n ");
-						start_ulp();
-						value=4;
-						esp_sleep_enable_timer_wakeup(1000000);
-						printf("enter deep sleep\n");
-						esp_deep_sleep_start(); ////进入深睡模式
+						printf("i am in Display mode,but it time is to go in Update mode \n");
+						xEventGroupSetBits(EventGroupHandler, UPDATE_BIT); //设置UPDATE_BIT模式标志位
 					}
-					else if (ulp_move_flags == 1) //ulp状态 动
+					else
 					{
-						printf("from display mode enter deepsleep\r\n ");
-						getcurrenttime();
-						display_picture();
-						getcurrenttime();
-						if(timeinfo.tm_hour==23)
+						if (ulp_move_flags == 0) //ulp状态 未动
 						{
-							printf("i am in Display mode,but it time is to go in Update mode \n");
-							xEventGroupSetBits(EventGroupHandler, UPDATE_BIT); //设置UPDATE_BIT模式标志位
+							printf("from display mode enter deepsleep\r\n ");
+							start_ulp();
+							value=4;
+							sleep_time(2);
+							printf("enter deep sleep\n");
+							esp_deep_sleep_start(); ////进入深睡模式
 						}
-						else
+						else if (ulp_move_flags == 1) //ulp状态 动
 						{
+							printf("from display mode enter deepsleep\r\n ");
 							value=3;
 							esp_sleep_enable_timer_wakeup(1000000); //设置唤醒时间(采样周期所使用的时间与图片刷新时间综合考虑此唤醒时间的设置)
 							start_ulp();
@@ -421,6 +563,106 @@ void eventgroup_task(void *pvParameters)
 					}
 				}
             }
+            else if (EventValue & DOWNLOAD_BIT)
+            {
+            	printf("time to download picture\n");
+            	url_state=2;
+            	spi_flash_read(info_page*sector_size, &pic_number, sizeof(unsigned char));
+            	if(pic_number == 0xff)
+            	{
+            		pic_number = 0;
+            	}
+            	//判断是否有重名文件
+				unsigned char temp_name[40];
+				unsigned char i;
+				for(i=0;i<40;i++)
+				{
+					temp_name[i]=0xff;
+				}
+				for (i = 1; i <= pic_number; i++)
+				{
+					spi_flash_read(info_page*4096+i*sizeof(pic_data),&pic_data,sizeof(pic_data));
+					if( strcmp((char *)pic_data.pic_name,(char *)temp_name)==0)
+					 {
+						printf("i to the end!!!!!!!\n");
+						break;
+					 }
+					if (strcmp((char *)pic_data.pic_name, file_name) == 0) //有重名文件
+					{
+						printf("find same name picture\n");
+						//把文件名写到重名的地址
+						break;
+					}
+				}
+				//判断图片是否被删掉
+				unsigned char j;
+				for(j=1;j<=pic_number;j++)
+				{
+					spi_flash_read(info_page*4096+j*sizeof(pic_data),&pic_data,sizeof(pic_data));
+					 if(pic_data.pic_is_delete==0xff)
+					 {
+						 printf("j to the end!!!!!!!\n");
+						 break;
+					 }
+					if(pic_data.pic_is_delete==1)
+					{
+						printf("find picture was be deleted\n");
+						break;
+					}
+				}
+				pic_number++;
+				sf_WriteBuffer(&pic_number, info_page * 4096, sizeof(unsigned char));//写入文件个数
+				if(j==pic_number&&i==pic_number)
+				{
+					 if(pic_number!=1)
+					 {
+						 printf("not find same name picture\n");
+						 printf("not find picture was be deleted\n");
+					 }
+					 printf("j>picture_num&&i>picture_num current picture_num_real=%d\n", pic_number);
+				}
+				else
+				{
+					//若有重名，先把文件名写到重名的地址
+					if(i<pic_number)
+					{
+						pic_number = i;
+					}
+					else
+					{
+					//若无重名，有被删掉的图片，把文件写到被删掉的图片的地址
+						pic_number = j;
+						unsigned char picture_num_real; //实际图片数量
+						spi_flash_read(info_page_temp * 4096, &picture_num_real, sizeof(unsigned char));
+						picture_num_real++;
+						sf_WriteBuffer(&picture_num_real, info_page_temp * 4096, sizeof(unsigned char));
+						spi_flash_read(info_page_temp * 4096, &picture_num_real, sizeof(unsigned char));
+						printf("current picture_num_real=%d\n", picture_num_real);
+					}
+				}
+				memcpy(pic_data.pic_name,file_name,10);
+				getcurrenttime();
+				memset(pic_data.pic_time,0,sizeof(pic_data.pic_time));
+				int date=(timeinfo.tm_year+1900)*10000+(timeinfo.tm_mon+1)*100+timeinfo.tm_mday;
+				int_to_string(date,pic_data.pic_time);
+				pic_data.pic_index=pic_data.pic_name[strlen(pic_data.pic_name)-5];
+				pic_data.pic_is_delete=0;
+//				pic_data.pic_display_start_end_time
+//				pic_data.pic_display_duration
+//				pic_data.pic_display_order
+//				pic_data.pic_display_screen
+            	http_test_task(download_url, file_name);
+            	getdeviceinfo();
+            	esp_ble_gap_config_adv_data(&adv_data);//图片完成后广播
+            	url_state=1;
+            	printf("download picture done\n");
+            }
+            else if (EventValue & CLICK_BIT)
+            {
+            	pic_display_state=2;
+            	search_in_flash(file_name,0x07);
+            	pic_display_state=1;
+            }
         }
         else
         {
@@ -428,14 +670,82 @@ void eventgroup_task(void *pvParameters)
         }
     }
 }
+int search_in_flash(char * pic_name,unsigned char revceive_data_from_blue)
+{
+	char MY_TAG[10]="searchin";
+	char temp_name[40];
+	unsigned char temp;
+	unsigned char picture_num_temp;
+	unsigned char picture_num_real; //实际图片数量
+//		ESP_LOGW(MY_TAG,"all pic_name in flash:");
+//		for(int j=1;j<=picture_num_temp;j++)
+//		{
+//			spi_flash_read(info_page * 4096 + j * 50, temp_name, 40);
+//			ESP_LOGW(MY_TAG,"pic_%d_name=%s\n",j,temp_name);
+//		}
+	switch(revceive_data_from_blue)
+	{
+	case 0x02:
+		ESP_LOGW(MY_TAG,"pic come frome httpdownload");
+		spi_flash_read(info_page * 4096 + picture_num * 50 + 40, &temp, sizeof(unsigned char));
+		ESP_LOGW(MY_TAG,"let`s start_display_pic_what_you_push");
+		display(pic_name,temp,pic_size);
+		break;
+	case 0x07:
+		spi_flash_read(info_page_temp * 4096, &picture_num_real, sizeof(unsigned char));
+		if(picture_num_real==0)
+		{
+			ESP_LOGW(MY_TAG,"no pic in flash");
+			break;
+		}
+		else
+		{
+			spi_flash_read(info_page * 4096, &picture_num_temp, sizeof(unsigned char));
+			unsigned char i=1;
+			for(;i<=picture_num_temp;i++)
+			{
+				spi_flash_read(info_page * 4096 + i * 50, temp_name, 40);
+				if(i>picture_num_real)
+				{
+					temp_name[39]='\0';
+					if(strcmp(temp_name,temp_file_name)==0)
+					{
+						ESP_LOGW(MY_TAG,"no picture what you want to display,");
+						return -2;
+					}
+				}
+				if(strcmp(pic_name,temp_name)==0)
+				{
+					spi_flash_read(info_page * 4096 + i * 50 + 40, &temp, sizeof(unsigned char));
+					ESP_LOGW(MY_TAG,"find pic what you want to display,");
+					if(temp==i)
+					{
+						ESP_LOGW(MY_TAG,"now,let`s start_display_pic_what_you_choose");
+						display(pic_name,temp,pic_size);
+						break;
+					}
+					else
+					{
+						ESP_LOGW(MY_TAG,"but it was be deleted already");
+						return -1;
+					}
+				}
+			}
+		}
+		break;
+	}
+	return 0;	// display successfully
+}
 //获取当前系统时间
 void getcurrenttime(void)
 {
-    time(&now);
-    tzset();
-    localtime_r(&now, &timeinfo);
-//    printf("hours=%d ,minute=%d ,second=%d \n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
-    vTaskDelay(1000 / portTICK_RATE_MS);
+	time(&now);
+	// Set timezone to China Standard Time
+	setenv("TZ", "CST-8", 1);
+	tzset();
+	localtime_r(&now, &timeinfo);
+	strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+	printf("The current date/time in Shanghai is: %s", strftime_buf);
 }
 //写入数据到内存,测试时使用
 static void write_modetoflash(void)

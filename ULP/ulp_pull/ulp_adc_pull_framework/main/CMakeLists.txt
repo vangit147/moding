@@ -1,5 +1,6 @@
 idf_component_register(SRCS "timer.c" "ulp_adc_example_main.c" 
                             "spiff.c"
+                            "drive_565_screen.c"
                             "bleinit.c"
                         INCLUDE_DIRS "."
                        INCLUDE_DIRS "include"
