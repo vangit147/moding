@@ -32,7 +32,7 @@
 #include "nvs_flash.h"
 #include <time.h>
 #include "esp_spi_flash.h"
-
+#include "esp_pm.h"
 #include "spiff.h"
 RTC_DATA_ATTR unsigned char current_mode = 0; //0-runmode 1-demomode
 RTC_DATA_ATTR unsigned char Hiber_time = 0;   //H状态标志位设置 1设置，0未设置
@@ -132,7 +132,11 @@ void app_main()
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
-
+//    esp_pm_config_esp32_t pm_config ={
+//    		.max_freq_mhz = CONFIG_MAX_CPU_FREQ_MHZ,
+//			.min_freq_mhz = CONFIG_MIN_CPU_FREQ_MHZ,
+//			.light_sleep_enable = true;
+//    };
     //开机时判断当前的运行模式为演示模式还是运行模式,当深度唤醒时,初始化的函数不会再次执行,会进入
     //esp_wake_deep_sleep执行代码
     getcurrenttime();
