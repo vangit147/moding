@@ -43,12 +43,6 @@ int http_test_task(char *dpwn_url)
 {
 	int data_read_size = 0, bytes_read = 0;
 
-    if (BUFFER == NULL)
-    {
-        ESP_LOGE(http_tag, "Cannot malloc http receive buffer");
-        return 0;
-    }
-
     esp_http_client_config_t config = {
     	.url = dpwn_url,
         .event_handler = _http_event_handler,
@@ -59,33 +53,34 @@ int http_test_task(char *dpwn_url)
     while(1)
     {
         esp_err_t err;
-//        unsigned char http_client_open_failed_times=3;
-//        while(http_client_open_failed_times)
-//        {
+        unsigned char http_client_open_failed_times=3;
+        while(http_client_open_failed_times)
+        {
         	if ((err = esp_http_client_open(client, 0)) != ESP_OK)
     		{
     			ESP_LOGE(http_tag, "Failed to open HTTP connection: %s", esp_err_to_name(err));
-//    			http_client_open_failed_times--;
-//    			if(http_client_open_failed_times==0)
-//    			{
-//    				ESP_LOGE(http_tag, "Failed to open an HTTP connection after three attempts");
-//    				if(current_data.network_wrong_state==0)
-//    				{
-//    					//			display picture network wrong
-//    				}
-//    				else
-//    				{
-//    					ESP_LOGE(http_tag,"flash no low_network_wifi_picture_page to display");
-//    				}
-//    				sleep_for_next_wakeup();
+    			http_client_open_failed_times--;
+    			if(http_client_open_failed_times==0)
+    			{
+    				ESP_LOGE(http_tag, "Failed to open an HTTP connection after three attempts");
+    				if(current_data.network_wrong_state==0)
+    				{
+    					//			display picture network wrong
+    				}
+    				else
+    				{
+    					ESP_LOGE(http_tag,"flash no low_network_wifi_picture_page to display");
+    				}
+    				sleep_for_next_wakeup();
     				return 0;
-//    			}
+    			}
     		}
-//    		else
-//    		{
-//    			break;
-//    		}
-//        }
+    		else
+    		{
+    			ESP_LOGE(http_tag, "esp_http_client_open succeed");
+    			break;
+    		}
+        }
 
 		printf("\n");
 		ESP_LOGE(http_tag, "start_download_data");
@@ -229,6 +224,7 @@ int http_test_task(char *dpwn_url)
     }
     return 1;
 }
+
 
 
 void search_dis_pic()

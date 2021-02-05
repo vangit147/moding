@@ -110,17 +110,17 @@ void wifi_init_sta(void)
     /* 根据cfg参数初始化wifi连接所需要的资源 */
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     //忽略之前存储的wifi ssid和pwd
-    esp_wifi_restore();
+//    esp_wifi_restore();
     //update van
     // 配置STA 模式，配置wifi名称以及密码
     // 使用ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config))函数是配置生效
 	/**************************/
-//     wifi_config_t wifi_config = {
-//         .sta = {
-//			  .ssid = "moding_wifi",
-//			  .password = "modingtech.com"},
-//     };
-//     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+     wifi_config_t wifi_config = {
+         .sta = {
+			  .ssid = "moding_wifi",
+			  .password = "modingtech.com"},
+     };
+     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
      /* 将事件处理程序注册到系统默认事件循环，分别是WiFi事件、IP地址事件及smartconfig事件 */
        ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
        ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL));

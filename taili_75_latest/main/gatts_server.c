@@ -341,6 +341,7 @@ void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble
 					ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
 					esp_wifi_disconnect();
 					esp_wifi_connect();
+					vTaskDelay(5000 / portTICK_PERIOD_MS);
 				}
 				ble_senddata(prepare_write_env->prepare_buf);
 				if(isconnected==1)
@@ -349,7 +350,11 @@ void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble
 					getdeviceinfo();
 					esp_ble_gap_config_adv_data(&adv_data);
 					check_wifi_httpdownload_pic('0');
-//					sleep_for_next_wakeup();
+					sleep_for_next_wakeup();
+				}
+				else
+				{
+					sleep_for_next_wakeup();
 				}
             }
         }
@@ -493,6 +498,7 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
 								ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
 								esp_wifi_disconnect();
 								esp_wifi_connect();
+								vTaskDelay(5000 / portTICK_PERIOD_MS);
 							}
 							ble_senddata(receive_buffer);
 							if(isconnected==1)
@@ -501,10 +507,14 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
 								getdeviceinfo();
 								esp_ble_gap_config_adv_data(&adv_data);
 								check_wifi_httpdownload_pic('0');
-//								sleep_for_next_wakeup();
+								sleep_for_next_wakeup();
 							}
-                        }
+							else
+							{
+								sleep_for_next_wakeup();
+							}
 
+                        }
                     }
                 }
             }

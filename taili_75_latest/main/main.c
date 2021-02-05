@@ -77,10 +77,18 @@ void app_main()
 		device_info[9+i]=mac[i];
 		if(i==5)
 		{
+			if((int)mac[i]<16)
+			{
+				printf("0");
+			}
 			printf("%x\n",mac[i]);
 		}
 		else
 		{
+			if((int)mac[i]<16)
+			{
+				printf("0");
+			}
 			printf("%x:",mac[i]);
 		}
 	}
@@ -95,6 +103,7 @@ void app_main()
 	LDK_init();
 	ESP_LOGW(main_tag, "LDK_init desk_calender 7.5 done");
 
+	vTaskDelay(2000 / portTICK_PERIOD_MS);
 	if(voltage<=220)
 	{
 //		display_low_network_wifi_picture(0);
@@ -103,10 +112,12 @@ void app_main()
 	}
 	else
 	{
+		ESP_LOGW(main_tag,"voltage>220");
 		find_wakeup_cause();
 //		check_wifi_httpdownload_pic('0');
-//		char *dwurl="https://aink.net/devices/resources/c4:4f:33:79:82:b3/20201201.bin";
-//		http_test_task(durl);
+//		char *dwurl="https://aink.net/devices/resources/c4:4f:33:79:7a:eb/20201201.bin";
+//		 char *dwurl="https://aink.net/devices/download/pic/c4:4f:33:79:7a:eb?picname=20210101.bin&picsize=0&voltage=328&action=0&timestamp=1609430400";
+//		http_test_task(dwurl);
 	}
 
 	return;

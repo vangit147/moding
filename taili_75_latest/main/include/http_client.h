@@ -17,7 +17,6 @@
 
 char wakeup_cause;
 
-//char BUFFER_temp[15][4096];
 char BUFFER[4096];
 char PICNAME[20];
 unsigned char picture_index;

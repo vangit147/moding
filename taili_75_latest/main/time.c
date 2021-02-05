@@ -23,6 +23,6 @@ void Timer_Config(void)
 	        .name = "periodic"};
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
     ESP_LOGW(timer_tag,"set five minutes");
-    esp_timer_start_periodic(periodic_timer,3*1000 * 1000);
+    esp_timer_start_periodic(periodic_timer,3*1000*1000);
 }
 

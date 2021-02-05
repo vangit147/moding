@@ -24,21 +24,21 @@ void find_wakeup_cause()
 	{
 		case ESP_SLEEP_WAKEUP_EXT1:
 		{
-			uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
-			int pin = __builtin_ffsll(wakeup_pin_mask) - 1;
-			printf("Wake up from GPIO %d\n", pin);
-			if(pin == 14)
-			{
+//			uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
+//			int pin = __builtin_ffsll(wakeup_pin_mask) - 1;
+//			printf("Wake up from GPIO %d\n", pin);
+//			if(pin == 14)
+//			{
 				check_wifi_httpdownload_pic('2');//next page
-			}
-			else if(pin == 25)
-			{
-				check_wifi_httpdownload_pic('0');//auto_update
-			}
-			else
-			{
-				sleep_for_next_wakeup();
-			}
+//			}
+//			else if(pin == 25)
+//			{
+//				check_wifi_httpdownload_pic('0');//auto_update
+//			}
+//			else
+//			{
+//				sleep_for_next_wakeup();
+//			}
 			break;
 		}
 		case ESP_SLEEP_WAKEUP_EXT0:
@@ -58,6 +58,10 @@ void find_wakeup_cause()
 //				display picture network wrong
 //				display_low_network_wifi_picture(1);
 			}
+			else
+			{
+				check_wifi_httpdownload_pic('0');
+			}
 			break;
 		default:
 			ESP_LOGW(my_tag,"other wakeup cause ----> deep sleep start");
@@ -71,14 +75,14 @@ void find_wakeup_cause()
 void sleep_for_next_wakeup()
 {
 	esp_sleep_enable_ext0_wakeup(0ULL<<0x00, 0);
-
-	const int ext_wakeup_pin_1 = 25;
-	const uint64_t ext_wakeup_pin_1_mask = 1ULL << ext_wakeup_pin_1;
-	const int ext_wakeup_pin_2 = 14;
-	const uint64_t ext_wakeup_pin_2_mask = 1ULL << ext_wakeup_pin_2;
-
-	printf("Enabling EXT1 wakeup on pins GPIO%d, GPIO%d\n", ext_wakeup_pin_1, ext_wakeup_pin_2);
-	esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask | ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
+	esp_sleep_enable_ext1_wakeup(1ULL<<0X19, 0);
+//	const int ext_wakeup_pin_1 = 25;
+//	const uint64_t ext_wakeup_pin_1_mask = 1ULL << ext_wakeup_pin_1;
+//	const int ext_wakeup_pin_2 = 14;
+//	const uint64_t ext_wakeup_pin_2_mask = 1ULL << ext_wakeup_pin_2;
+//
+//	printf("Enabling EXT1 wakeup on pins GPIO%d, GPIO%d\n", ext_wakeup_pin_1, ext_wakeup_pin_2);
+//	esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask | ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
 
 	ESP_LOGW(my_tag,"Go to sleep immediately");
 //	set_time_to_wakeup_by_timer(17,59);
@@ -196,7 +200,6 @@ void set_time_to_wakeup_by_timer(int hour,int min)
 {
 	gettimeofday(&stime,NULL);
 	current_data.time_stamp=stime.tv_sec;
-	gettimeofday(&stime,NULL);
 	time_now=stime.tv_sec;
 	p=localtime(&time_now);
 	printf("p->tm_hour=%d p->tm_min=%d p->tm_sec=%d ",p->tm_hour,p->tm_min,p->tm_sec);
@@ -298,8 +301,8 @@ void check_wifi_httpdownload_pic(char wakeup_cause)
 		temp_time_stamp[10]='\0';
 		strcat(URL_download,temp_time_stamp);
 
-//		ESP_LOGW(my_tag,"Request server try to get download_picture_name");
-//		ESP_LOGW(my_tag,"request_url=%s",URL_download);
+		ESP_LOGW(my_tag,"Request server try to get download_picture_name");
+		ESP_LOGW(my_tag,"request_url=%s",URL_download);
 		http_test_task(URL_download);
 	}
 	else
@@ -517,6 +520,7 @@ void int_to_string(long value, char * output)
 void charconnectuchar(char a[],unsigned char b[])
 {
 	unsigned char i=0;
+	unsigned char j;
 	while(1)
 	{
 		if(a[i]=='\0')
@@ -529,11 +533,21 @@ void charconnectuchar(char a[],unsigned char b[])
 	char arr[18];
 	char *p=arr;
 	arr[17]='\0';
-	for(unsigned char j=0;j<6;j++)
+	for(j=0;j<6;j++)
 	{
-		sprintf(p,"%x",device_info[j+9]);
-		p++;
-		p++;
+		if((int)device_info[j+9]<16)
+		{
+			*p='0';
+			p++;
+			sprintf(p,"%x",device_info[j+9]);
+			p++;
+		}
+		else
+		{
+			sprintf(p,"%x",device_info[j+9]);
+			p++;
+			p++;
+		}
 		if(j<5)
 		{
 			*p=':';
@@ -541,11 +555,11 @@ void charconnectuchar(char a[],unsigned char b[])
 		}
 	}
 	strcat(a,arr);
-//	printf("j=%d\n",j);
-//	for(j=0;j<18;j++)
-//	{
-//		printf("arr[%d]=%c\n",j,arr[j]);
-//	}
+	printf("j=%d\n",j);
+	for(j=0;j<18;j++)
+	{
+		printf("arr[%d]=%c\n",j,arr[j]);
+	}
 }
 
 void mac_to_device_info()
